@@ -1,0 +1,5 @@
+{
+  "name": "Freshdesk Pulse Dashboard",
+  "description": "A secure, real-time dashboard for Freshdesk support ticket analysis.",
+  "requestFramePermissions": []
+}

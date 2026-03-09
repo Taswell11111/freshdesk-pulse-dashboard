@@ -1,0 +1,1949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Ticket Analysis | Live Data</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; color: #1F2937; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin: 0 auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .chart-container-wide { position: relative; width: 100%; max-width: 900px; margin: 0 auto; height: 350px; max-height: 450px; }
+        @media (min-width: 768px) { .chart-container-wide { height: 400px; } }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); transition: all 0.3s ease; }
+        .glass-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+        #loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 50; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.5s; }
+        #loading-overlay:not(.hidden) { display: flex; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="initial-screen" class="fixed inset-0 bg-white z-50 flex flex-col justify-center items-center p-4">
+        <div class="max-w-md w-full text-center">
+            <div class="mb-8">
+                <div class="inline-block bg-blue-100 text-blue-800 px-4 py-1 rounded-full text-sm font-semibold mb-4 tracking-wide uppercase">Freshdesk Pulse</div>
+                <h1 class="text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Support Ecosystem</h1>
+                <p class="text-gray-500">Connect to your Freshdesk account to view live active backlog data, analyse ticket aging, and generate AI sentiment insights.</p>
+            </div>
+            
+            <button onclick="startDashboard()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                <span>Connect & Fetch Live Data</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </button>
+            
+            <p class="mt-6 text-xs text-gray-400">Ensure your FRESHDESK_API_KEY and FRESHDESK_DOMAIN are configured in the Secrets panel.</p>
+        </div>
+    </div>
+
+    <div id="loading-overlay" class="hidden">
+        <div class="text-4xl animate-bounce mb-4">🔄</div>
+        <h2 class="text-2xl font-bold text-gray-800">Fetching Secure Live Data...</h2>
+        <p class="text-gray-500 mt-2">Connecting via secure backend proxy</p>
+        <p id="api-status" class="text-sm text-blue-500 mt-4 max-w-md text-center font-semibold">Initializing connection...</p>
+    </div>
+
+    <header class="max-w-7xl mx-auto mb-12 mt-8 px-4">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+            <div class="text-left">
+                <div id="live-indicator" class="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-xs font-bold mb-4 tracking-wide uppercase shadow-lg shadow-blue-200">
+                    <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                    Live Active Backlog
+                </div>
+                <h1 class="text-5xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight">Support Ecosystem <br/><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">Pulse Check</span></h1>
+                <p class="text-gray-500 mt-4 text-sm md:text-base max-w-xl">Real-time analysis of active ticket volume, aging, and agent responsiveness across all support groups.</p>
+            </div>
+            
+            <div class="flex flex-col items-end bg-white/80 p-4 rounded-2xl backdrop-blur-sm border border-gray-100 shadow-sm w-full md:w-auto">
+                <div class="text-xs text-gray-500 text-right mb-3 w-full">
+                    <div class="font-medium text-gray-600">Data Range: <span class="text-gray-900">Last 200 Days</span></div>
+                    <div class="mt-1"><span id="last-sync-time" class="font-bold text-gray-800">Synced / Pulse Check: Never</span></div>
+                </div>
+                <div class="flex flex-wrap justify-end gap-2 w-full">
+                    <button onclick="sendMorningBrief()" id="email-brief-btn" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-lg transition flex items-center gap-1 font-medium">
+                        📧 Email Brief
+                    </button>
+                    <button onclick="generateReportLink()" id="report-link-btn" class="text-xs bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 px-3 py-2 rounded-lg transition flex items-center gap-1 font-medium">
+                        🔗 Report Link
+                    </button>
+                    <button onclick="downloadDashboard()" class="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-2 rounded-lg transition flex items-center gap-1 font-medium">
+                        📄 Download
+                    </button>
+                    <button onclick="generateVoiceBriefing()" id="voice-btn" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-2 rounded-lg transition flex items-center gap-1 font-medium">
+                        🎙️ Voice
+                    </button>
+                    <button onclick="analyseSentiment()" id="ai-btn" class="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-3 py-2 rounded-lg transition flex items-center gap-1 font-medium">
+                        ✨ AI Analysis
+                    </button>
+                    <button onclick="fetchFreshdeskData()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 px-3 py-2 rounded-lg transition font-medium">Force Refresh</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-8 mb-20 px-4">
+        <div onclick="openModal('total')" class="glass-card rounded-2xl p-8 shadow-xl border-t-4 border-green-500 cursor-pointer hover:scale-105 transition-transform">
+            <h3 class="text-gray-500 font-bold uppercase tracking-widest text-xs mb-3">Total Active Volume</h3>
+            <div id="kpi-total-val" class="text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">...</div>
+            <p class="text-sm text-green-600 font-medium bg-green-50 inline-block px-2 py-1 rounded">Excludes Closed/Resolved</p>
+            <div class="mt-4 text-xs text-gray-400 flex items-center font-medium"><span>View Details</span> <span class="ml-1">→</span></div>
+        </div>
+        <div onclick="openModal('topType')" class="glass-card rounded-2xl p-8 shadow-xl border-t-4 border-blue-500 cursor-pointer hover:scale-105 transition-transform">
+            <h3 class="text-gray-500 font-bold uppercase tracking-widest text-xs mb-3">Highest Volume Type</h3>
+            <div id="kpi-top-type-val" class="text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">...</div>
+            <p id="kpi-top-type-label" class="text-sm text-blue-600 font-medium bg-blue-50 inline-block px-2 py-1 rounded">Loading...</p>
+            <div class="mt-4 text-xs text-gray-400 flex items-center font-medium"><span>View Details</span> <span class="ml-1">→</span></div>
+        </div>
+        <div onclick="openModal('open')" class="glass-card rounded-2xl p-8 shadow-xl border-t-4 border-purple-500 cursor-pointer hover:scale-105 transition-transform">
+            <h3 class="text-gray-500 font-bold uppercase tracking-widest text-xs mb-3">Total Backlog (Open)</h3>
+            <div id="kpi-open-val" class="text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">...</div>
+            <p class="text-sm text-purple-600 font-medium bg-purple-50 inline-block px-2 py-1 rounded">Requiring Action</p>
+            <div class="mt-4 text-xs text-gray-400 flex items-center font-medium"><span>View Details</span> <span class="ml-1">→</span></div>
+        </div>
+        <div onclick="openModal('critical')" class="glass-card rounded-2xl p-8 shadow-xl border-t-4 border-red-500 cursor-pointer hover:scale-105 transition-transform">
+            <h3 class="text-gray-500 font-bold uppercase tracking-widest text-xs mb-3">Critical Aging</h3>
+            <div id="kpi-critical-val" class="text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">...</div>
+            <p class="text-sm text-red-600 font-medium bg-red-50 inline-block px-2 py-1 rounded">> 2 Days, No Response</p>
+            <div class="mt-4 text-xs text-gray-400 flex items-center font-medium"><span>View Details</span> <span class="ml-1">→</span></div>
+        </div>
+        <div class="glass-card rounded-2xl p-8 shadow-xl border-t-4 border-orange-500">
+            <h3 class="text-gray-500 font-bold uppercase tracking-widest text-xs mb-3">Avg Backlog Age</h3>
+            <div id="kpi-avg-age-val" class="text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">...</div>
+            <p class="text-sm text-orange-600 font-medium bg-orange-50 inline-block px-2 py-1 rounded">Days unresolved</p>
+        </div>
+    </section>
+
+    <section class="max-w-7xl mx-auto mb-20 px-4">
+        <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-8 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Active Volume by Group</h2>
+                    <p class="text-gray-500 text-sm mt-1">Distribution of unresolved tickets across support groups</p>
+                </div>
+                <div class="text-xs font-mono text-gray-400 bg-white px-3 py-1 rounded border">Sorted by Volume</div>
+            </div>
+            <div class="p-8">
+                <div class="chart-container-wide"><canvas id="brandVolumeChart"></canvas></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Queue State & Core Topics (Moved here) -->
+    <section class="max-w-7xl mx-auto mb-20 px-4">
+        <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-8 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-2xl font-bold text-gray-800">Queue State & Core Topics</h2>
+                <p class="text-gray-500 text-sm mt-1">Breakdown by Status and Ticket Type</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12 p-8 min-h-[450px]">
+                <div class="flex flex-col h-[400px]">
+                    <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-6 text-center">Active Ticket Status</h3>
+                    <div class="chart-container h-full"><canvas id="statusChart"></canvas></div>
+                </div>
+                <div class="flex flex-col h-[400px]">
+                    <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-6 text-center">Active Count by Type</h3>
+                    <div class="chart-container h-full"><canvas id="typeChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Agent Response Meter (Moved above aging) -->
+    <section class="max-w-7xl mx-auto mb-20 px-4 group">
+        <div class="bg-white rounded-3xl shadow-xl p-10 border border-gray-100 group-hover:shadow-2xl transition-all ring-1 ring-gray-100 group-hover:ring-blue-200">
+            <div class="text-center mb-10">
+                <h2 class="text-3xl font-bold text-gray-800 mb-3">Agent Response Meter</h2>
+                <p class="text-gray-500 max-w-2xl mx-auto">Proportion of active tickets that have received an agent response versus those awaiting first contact.</p>
+            </div>
+            <div class="relative max-w-4xl mx-auto">
+                <div class="flex justify-between items-end mb-4 px-2">
+                    <div class="text-left cursor-pointer hover:opacity-80 transition-opacity" onclick="openModal('responseMeter', 'noResponse')">
+                        <div class="text-4xl font-extrabold text-red-500" id="meter-no-val">0</div>
+                        <div class="text-xs font-bold uppercase tracking-widest text-gray-400 mt-1">No Response</div>
+                    </div>
+                    <div class="text-right cursor-pointer hover:opacity-80 transition-opacity" onclick="openModal('responseMeter', 'responded')">
+                        <div class="text-4xl font-extrabold text-green-500" id="meter-yes-val">0</div>
+                        <div class="text-xs font-bold uppercase tracking-widest text-gray-400 mt-1">Agent Responded</div>
+                    </div>
+                </div>
+                <div class="w-full h-16 bg-gray-100 rounded-2xl overflow-hidden flex shadow-inner relative">
+                    <div id="meter-no-bar" onclick="openModal('responseMeter', 'noResponse')" class="h-full bg-gradient-to-r from-red-500 to-red-400 transition-all duration-1000 flex items-center justify-center text-white font-bold text-lg shadow-lg cursor-pointer hover:brightness-110" style="width: 0%"></div>
+                    <div id="meter-yes-bar" onclick="openModal('responseMeter', 'responded')" class="h-full bg-gradient-to-r from-green-400 to-green-500 transition-all duration-1000 flex items-center justify-center text-white font-bold text-lg shadow-lg cursor-pointer hover:brightness-110" style="width: 0%"></div>
+                    
+                    <!-- Tooltip -->
+                    <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-white text-xs p-4 rounded-2xl pointer-events-none flex flex-col justify-center items-center backdrop-blur-sm" id="meter-tooltip">
+                        Hover for details
+                    </div>
+                </div>
+                <div class="text-center mt-4 text-xs text-gray-400 font-medium">Click on sections to view details</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detailed Aging Analysis -->
+    <section class="max-w-7xl mx-auto mb-20 px-4">
+        <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-8 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-2xl font-bold text-gray-800">Detailed Active Tickets Aging Analysis by Group</h2>
+                <p class="text-gray-500 text-sm mt-1">Bucketed by creation date (< 3 days, 3-7 days, 8+ days)</p>
+            </div>
+            <div class="p-8">
+                <div class="chart-container-wide"><canvas id="ageBucketChart"></canvas></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- AI Sentiment Analysis Section (Hidden by default) -->
+    <section id="ai-sentiment-section" class="max-w-7xl mx-auto mb-20 px-4 hidden">
+        <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-3xl shadow-xl overflow-hidden border border-purple-100">
+            <div class="p-8 border-b border-purple-200 flex justify-between items-center bg-white/50 backdrop-blur-sm">
+                <div>
+                    <h2 class="text-2xl font-bold text-purple-900 flex items-center gap-2">
+                        ✨ AI Sentiment Analysis
+                    </h2>
+                    <p class="text-purple-700 mt-1 text-sm">Analysing the subjects of your oldest unresolved tickets.</p>
+                </div>
+                <div id="sentiment-stats" class="flex gap-4 hidden">
+                    <div class="bg-red-100 text-red-800 px-4 py-2 rounded-lg text-sm font-bold"><span id="count-frustrated">0</span> Frustrated</div>
+                    <div class="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-lg text-sm font-bold"><span id="count-neutral">0</span> Neutral</div>
+                    <div class="bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm font-bold"><span id="count-positive">0</span> Positive</div>
+                </div>
+            </div>
+            <div class="p-8">
+                <div id="ai-loading" class="flex flex-col items-center justify-center py-12 hidden">
+                    <div class="w-12 h-12 border-4 border-purple-300 border-t-purple-600 rounded-full animate-spin mb-4"></div>
+                    <p class="text-purple-800 font-medium animate-pulse">Gemini is reading your tickets...</p>
+                </div>
+                <div id="ai-results" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden">
+                    <!-- Results will be injected here -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Aging Response Analysis (Unhidden) -->
+    <section class="max-w-7xl mx-auto mb-20 px-4">
+        <div class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-8 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-2xl font-bold text-gray-800">Aging & Response Analysis by Group</h2>
+                <p class="text-gray-500 text-sm mt-1">Breakdown of response status across aging buckets</p>
+            </div>
+            <div class="p-8">
+                <div class="chart-container-wide"><canvas id="agingResponseChart"></canvas></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Enhanced Modal with Export and Search -->
+    <div id="ticket-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex justify-center items-center p-4 transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col transform transition-transform">
+            <div class="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <div>
+                    <h2 id="modal-title" class="text-2xl font-extrabold text-gray-800">Tickets Details</h2>
+                    <p id="modal-subtitle" class="text-sm text-gray-500 mt-1"></p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <input type="text" id="modal-search" placeholder="Search Subject or ID..." class="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onkeyup="filterModalTable()">
+                    <button onclick="saveToCloud()" id="cloud-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                        ☁️ Save to Cloud
+                    </button>
+                    <button onclick="downloadCSV()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">📥 Export CSV</button>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-red-500 text-4xl leading-none font-light focus:outline-none">&times;</button>
+                </div>
+            </div>
+            <div class="p-0 overflow-y-auto flex-1 bg-white rounded-b-2xl">
+                <table id="modal-table" class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-gray-100 shadow-sm z-10">
+                        <tr id="modal-header-row" class="text-gray-600 text-xs uppercase tracking-wider">
+                            <th class="p-4 font-semibold border-b">ID</th>
+                            <th class="p-4 font-semibold border-b">Subject</th>
+                            <th class="p-4 font-semibold border-b">Status</th>
+                            <th class="p-4 font-semibold border-b">Group</th>
+                            <th class="p-4 font-semibold border-b text-right">Age (Days)</th>
+                            <th class="p-4 font-semibold border-b text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-tbody" class="text-sm text-gray-700 divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ticket Details Modal -->
+    <div id="ticket-details-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 z-[60] flex justify-center items-center p-4 transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transform transition-transform">
+            <div class="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <div>
+                    <h2 id="details-modal-title" class="text-2xl font-extrabold text-gray-800">Ticket Details</h2>
+                </div>
+                <button onclick="closeDetailsModal()" class="text-gray-400 hover:text-red-500 text-4xl leading-none font-light focus:outline-none">&times;</button>
+            </div>
+            <div id="details-modal-body" class="p-6 overflow-y-auto flex-1 bg-white rounded-b-2xl text-gray-700">
+                <!-- Content goes here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+
+        let globalTicketsData =[];
+        let globalGroupMap = {};
+        let globalGroupStats = {};
+        let globalTypeStats = {};
+        let globalResponseAgingStats = {};
+        let currentTopGroup = '';
+        let currentModalData =[]; 
+
+        function wrapLabel(label) {
+            if (!label) return 'Unknown';
+            const MAX_LENGTH = 16;
+            if (label.length <= MAX_LENGTH) return label;
+            return label.match(new RegExp('.{1,' + MAX_LENGTH + '}(\\s|$)', 'g'));
+        }
+
+        async function fetchFreshdeskData() {
+            const overlay = document.getElementById('loading-overlay');
+            const statusEl = document.getElementById('api-status');
+            overlay.style.display = 'flex';
+            overlay.style.opacity = '1';
+
+            try {
+                // 1. Use hardcoded group map and fetch for any extras
+                statusEl.innerText = "Fetching Groups...";
+                const groupMap = {
+                    24000008969: "LEVI’S SOUTH AFRICA",
+                    24000009010: "DIESEL ONLINE",
+                    24000009052: "HURLEY ONLINE",
+                    24000009038: "JEEP APPAREL",
+                    24000009035: "REEBOK ONLINE",
+                    24000009051: "SUPERDRY ONLINE",
+                    24000005392: "PICK n PAY CLOTHING",
+                    24000031300: "PnP Clothing",
+                    24000029112: "eComplete Customer Services"
+                };
+
+                try {
+                    const groupsRes = await fetch('/api/groups');
+                    if (groupsRes.ok) {
+                        const groupsData = await groupsRes.json();
+                        groupsData.forEach(g => {
+                            if (!groupMap[g.id]) {
+                                groupMap[g.id] = g.name;
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Could not fetch dynamic groups, using hardcoded map.", e);
+                }
+
+                // 2. Fetch All Active Tickets via BFF Stream
+                const pastDate = new Date();
+                pastDate.setDate(pastDate.getDate() - 200); // Last 200 days
+                const updatedSince = pastDate.toISOString().split('.')[0] + 'Z'; 
+
+                const eventSource = new EventSource(`/api/tickets/stream?updated_since=${encodeURIComponent(updatedSince)}`);
+
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.error) {
+                        eventSource.close();
+                        statusEl.innerHTML = `⚠️ <b>Backend Error</b><br>${data.error}`;
+                        return;
+                    }
+
+                    if (data.progress) {
+                        statusEl.innerText = data.progress;
+                    }
+
+                    if (data.done) {
+                        eventSource.close();
+                        processAndRender(data.tickets, groupMap);
+                        globalGroupMap = groupMap;
+                        const now = new Date();
+                        const timeStr = now.toLocaleTimeString('en-GB', { hour12: false });
+                        const dateStr = now.toLocaleDateString('en-GB').replace(/\//g, '-');
+                        document.getElementById('last-sync-time').innerText = `Synced / Pulse Check: ${timeStr} ${dateStr}`;
+                        overlay.style.opacity = '0';
+                        setTimeout(() => overlay.style.display = 'none', 500);
+                    }
+                };
+
+                eventSource.onerror = function(err) {
+                    eventSource.close();
+                    statusEl.innerHTML = `⚠️ <b>Connection Error</b><br>Failed to connect to the server stream.`;
+                };
+
+            } catch (error) {
+                console.error("Fetch Failed:", error);
+                statusEl.classList.replace('text-blue-500', 'text-red-500');
+                statusEl.innerHTML = `⚠️ <b>Connection Failed</b><br>${error.message}<br>Check your API key and domain in the Secrets panel.`;
+            }
+        }
+
+        function processAndRender(activeTickets, groupMap) {
+            globalTicketsData = activeTickets;
+            
+            const totalTickets = activeTickets.length;
+            let totalOpen = 0, totalCritical = 0, respondedCount = 0, noResponseCount = 0, totalAgeDays = 0;
+            const groupStats = {}, typeStats = {}, statusCountsDetailed = { 
+                'Open': {total: 0, groups: {}, types: {}, totalAgeDays: 0, tickets: []}, 
+                'Pending/Waiting': {total: 0, groups: {}, types: {}, totalAgeDays: 0, tickets: []}
+            };
+            const now = new Date();
+
+            // For the new chart
+            const responseAgingStats = {};
+
+            activeTickets.forEach(t => {
+                try {
+                    const gName = groupMap[t.group_id] || 'Unassigned';
+                    t._groupName = gName;
+                    const type = t.type && t.type.trim() !== '' ? t.type : 'Unclassified';
+                    
+                    if (!typeStats[type]) {
+                        typeStats[type] = { total: 0, statuses: {}, totalAgeDays: 0, responseCounts: { responded: 0, noResponse: 0 }, groups: {}, tickets: [] };
+                    }
+                    typeStats[type].total++;
+                    typeStats[type].groups[gName] = (typeStats[type].groups[gName] || 0) + 1;
+                    typeStats[type].tickets.push(t);
+
+                    if (!groupStats[gName]) {
+                        groupStats[gName] = { 
+                            total: 0, age1: 0, age2: 0, age5: 0, agePlus: 0,
+                            types: {},
+                            tickets: { age1: [], age2: [], age5: [], agePlus: [] },
+                            totalAgeDays: 0,
+                            statusCounts: { 'Open': 0, 'Pending/Waiting': 0 },
+                            responseCounts: { responded: 0, noResponse: 0 }
+                        };
+                        responseAgingStats[gName] = {
+                            no_response_1: 0, responded_1: 0,
+                            no_response_2: 0, responded_2: 0,
+                            no_response_5: 0, responded_5: 0,
+                            no_response_plus: 0, responded_plus: 0,
+                            tickets: {
+                                no_response_1: [], responded_1: [],
+                                no_response_2: [], responded_2: [],
+                                no_response_5: [], responded_5: [],
+                                no_response_plus: [], responded_plus: []
+                            }
+                        };
+                    }
+                    groupStats[gName].total++;
+                    groupStats[gName].types[type] = (groupStats[gName].types[type] || 0) + 1;
+
+                    const daysOld = t.created_at ? (now - new Date(t.created_at)) / (1000 * 60 * 60 * 24) : 0;
+                    t._daysOld = isNaN(daysOld) ? 0 : daysOld;
+                    totalAgeDays += t._daysOld;
+                    groupStats[gName].totalAgeDays += t._daysOld;
+                    typeStats[type].totalAgeDays += t._daysOld;
+
+                    // Updated logic: strictly check for agent response timestamps.
+                    // If either agent_responded_at OR first_responded_at is present, it counts as a response.
+                    // We ignore agent_interaction flag as it might be unreliable for this specific metric.
+                    const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                    
+                    if(hasResponded) {
+                        respondedCount++;
+                        groupStats[gName].responseCounts.responded++;
+                        typeStats[type].responseCounts.responded++;
+                    } else {
+                        noResponseCount++;
+                        groupStats[gName].responseCounts.noResponse++;
+                        typeStats[type].responseCounts.noResponse++;
+                    }
+
+                    if (t._daysOld > 2 && !hasResponded) {
+                        totalCritical++;
+                    }
+
+                    if (t._daysOld <= 1) {
+                        groupStats[gName].age1++;
+                        groupStats[gName].tickets.age1.push(t);
+                        if(hasResponded) {
+                            responseAgingStats[gName].responded_1++;
+                            responseAgingStats[gName].tickets.responded_1.push(t);
+                        } else {
+                            responseAgingStats[gName].no_response_1++;
+                            responseAgingStats[gName].tickets.no_response_1.push(t);
+                        }
+                    } else if (t._daysOld <= 2) {
+                        groupStats[gName].age2++;
+                        groupStats[gName].tickets.age2.push(t);
+                        if(hasResponded) {
+                            responseAgingStats[gName].responded_2++;
+                            responseAgingStats[gName].tickets.responded_2.push(t);
+                        } else {
+                            responseAgingStats[gName].no_response_2++;
+                            responseAgingStats[gName].tickets.no_response_2.push(t);
+                        }
+                    } else if (t._daysOld <= 5) {
+                        groupStats[gName].age5++;
+                        groupStats[gName].tickets.age5.push(t);
+                        if(hasResponded) {
+                            responseAgingStats[gName].responded_5++;
+                            responseAgingStats[gName].tickets.responded_5.push(t);
+                        } else {
+                            responseAgingStats[gName].no_response_5++;
+                            responseAgingStats[gName].tickets.no_response_5.push(t);
+                        }
+                    } else {
+                        groupStats[gName].agePlus++;
+                        groupStats[gName].tickets.agePlus.push(t);
+                        if(hasResponded) {
+                            responseAgingStats[gName].responded_plus++;
+                            responseAgingStats[gName].tickets.responded_plus.push(t);
+                        } else {
+                            responseAgingStats[gName].no_response_plus++;
+                            responseAgingStats[gName].tickets.no_response_plus.push(t);
+                        }
+                    }
+
+                    let statusKey = t.status === 2 ? 'Open' : 'Pending/Waiting';
+                    if (t.status === 2) totalOpen++;
+
+                    statusCountsDetailed[statusKey].total++;
+                    statusCountsDetailed[statusKey].totalAgeDays += t._daysOld;
+                    statusCountsDetailed[statusKey].groups[gName] = (statusCountsDetailed[statusKey].groups[gName] || 0) + 1;
+                    statusCountsDetailed[statusKey].types[type] = (statusCountsDetailed[statusKey].types[type] || 0) + 1;
+                    typeStats[type].statuses[statusKey] = (typeStats[type].statuses[statusKey] || 0) + 1;
+                    statusCountsDetailed[statusKey].tickets.push(t);
+                    groupStats[gName].statusCounts[statusKey]++;
+                } catch (e) {
+                    console.error(`Failed to process ticket #${t.id}:`, e);
+                }
+            });
+
+            const sortedGroups = Object.entries(groupStats).sort((a, b) => b[1].total - a[1].total).slice(0, 15);
+            const sortedTypes = Object.entries(typeStats).sort((a, b) => b[1].total - a[1].total);
+
+            document.getElementById('kpi-total-val').innerText = `${totalTickets} Tickets`;
+            
+            if(sortedTypes.length > 0) {
+                const topType = sortedTypes[0][0];
+                document.getElementById('kpi-top-type-val').innerText = `${sortedTypes[0][1].total} Tickets`;
+                document.getElementById('kpi-top-type-label').innerText = topType;
+            } else {
+                document.getElementById('kpi-top-type-val').innerText = `0 Tickets`;
+                document.getElementById('kpi-top-type-label').innerText = 'No Types';
+            }
+            
+            if(sortedGroups.length > 0) {
+                currentTopGroup = sortedGroups[0][0];
+            } else {
+                currentTopGroup = 'None';
+            }
+            
+            document.getElementById('kpi-open-val').innerText = `${totalOpen} Tickets`;
+            document.getElementById('kpi-critical-val').innerText = `${totalCritical} Tickets`;
+            
+            const avgAge = totalTickets > 0 ? (totalAgeDays / totalTickets).toFixed(1) : 0;
+            document.getElementById('kpi-avg-age-val').innerText = `${avgAge} Days`;
+
+            updateResponseMeter(totalTickets, respondedCount, noResponseCount);
+            globalResponseAgingStats = responseAgingStats;
+            globalGroupStats = groupStats;
+            globalTypeStats = typeStats;
+
+            // Removed dynamic-group-list update as the element was removed from DOM
+            
+            renderCharts(totalTickets, sortedGroups, statusCountsDetailed, typeStats, responseAgingStats);
+        }
+
+        function updateResponseMeter(total, responded, noResponse) {
+            document.getElementById('meter-no-val').innerText = noResponse;
+            document.getElementById('meter-yes-val').innerText = responded;
+            
+            const noPct = total > 0 ? (noResponse / total) * 100 : 0;
+            const yesPct = total > 0 ? (responded / total) * 100 : 0;
+            
+            const noBar = document.getElementById('meter-no-bar');
+            const yesBar = document.getElementById('meter-yes-bar');
+            
+            noBar.style.width = `${noPct}%`;
+            yesBar.style.width = `${yesPct}%`;
+
+            noBar.innerHTML = noPct > 5 ? `${noPct.toFixed(0)}%` : '';
+            yesBar.innerHTML = yesPct > 5 ? `${yesPct.toFixed(0)}%` : '';
+            
+            // Tooltip Breakdown
+            const tooltip = document.getElementById('meter-tooltip');
+            if (tooltip) {
+                // Calculate breakdown by group
+                const groupBreakdown = {};
+                globalTicketsData.forEach(t => {
+                    const g = t._groupName || 'Unassigned';
+                    if (!groupBreakdown[g]) groupBreakdown[g] = { responded: 0, noResponse: 0 };
+                    
+                    const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                    
+                    if (hasResponded) groupBreakdown[g].responded++;
+                    else groupBreakdown[g].noResponse++;
+                });
+                
+                let tooltipHtml = '<div class="text-xs font-bold mb-2 border-b border-gray-600 pb-1 text-center uppercase tracking-wider text-gray-300">Response Rate by Group</div>';
+                tooltipHtml += '<table class="w-full text-left border-collapse text-xs">';
+                tooltipHtml += '<thead><tr class="text-gray-400 border-b border-gray-700"><th class="pb-1 font-semibold">Group</th><th class="text-right px-2 pb-1 font-semibold text-red-400">No</th><th class="text-right px-2 pb-1 font-semibold text-green-400">Yes</th><th class="text-right pb-1 font-semibold">%</th></tr></thead>';
+                tooltipHtml += '<tbody>';
+                
+                Object.entries(groupBreakdown)
+                    .sort((a, b) => (b[1].noResponse + b[1].responded) - (a[1].noResponse + a[1].responded))
+                    .slice(0, 10)
+                    .forEach(([g, counts]) => {
+                        const total = counts.noResponse + counts.responded;
+                        const respPct = total > 0 ? Math.round((counts.responded / total) * 100) : 0;
+                        const colorClass = respPct >= 80 ? 'text-green-400' : (respPct >= 50 ? 'text-yellow-400' : 'text-red-400');
+                        
+                        tooltipHtml += `<tr class="border-b border-gray-800 last:border-0 hover:bg-gray-800 transition-colors">
+                            <td class="py-1 truncate max-w-[120px]" title="${g}">${g}</td>
+                            <td class="text-right px-2 text-red-300 font-mono">${counts.noResponse}</td>
+                            <td class="text-right px-2 text-green-300 font-mono">${counts.responded}</td>
+                            <td class="text-right ${colorClass} font-mono font-bold">${respPct}%</td>
+                        </tr>`;
+                    });
+                tooltipHtml += '</tbody></table>';
+                if (Object.keys(groupBreakdown).length > 10) tooltipHtml += '<div class="mt-2 text-[10px] text-gray-500 italic text-center">Top 10 groups by volume shown</div>';
+                
+                tooltip.innerHTML = tooltipHtml;
+            }
+        }
+
+        function openModal(filterType, extra) {
+            document.getElementById('modal-search').value = '';
+            const title = document.getElementById('modal-title');
+            const subtitle = document.getElementById('modal-subtitle');
+            subtitle.innerText = '';
+            
+            if (filterType === 'total') { currentModalData = globalTicketsData; title.innerText = 'Total Active Volume'; } 
+            else if (filterType === 'topType') { currentModalData = globalTicketsData.filter(t => (t.type || 'Unclassified') === document.getElementById('kpi-top-type-label').innerText); title.innerText = document.getElementById('kpi-top-type-label').innerText; } 
+            else if (filterType === 'open') { currentModalData = globalTicketsData.filter(t => t.status === 2); title.innerText = 'Open Backlog Tickets'; } 
+            else if (filterType === 'critical') { 
+                currentModalData = globalTicketsData.filter(t => {
+                    const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                    return t._daysOld > 2 && !hasResponded;
+                }); 
+                title.innerText = 'Critical Aging Tickets (>2 Days, No Response)'; 
+            }
+            else if (filterType === 'responseMeter') {
+                if (extra === 'noResponse') {
+                    currentModalData = globalTicketsData.filter(t => {
+                        const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                        const isResolvedOrClosed = (t.status === 4 || t.status === 5);
+                        // If it has a responder_id and is resolved/closed, we assume it has been responded to even if stats are missing
+                        const impliedResponse = t.responder_id && isResolvedOrClosed;
+                        return !hasResponded && !impliedResponse;
+                    });
+                    title.innerText = 'Tickets with No Agent Response';
+                } else if (extra === 'responded') {
+                    currentModalData = globalTicketsData.filter(t => {
+                        const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                        const isResolvedOrClosed = (t.status === 4 || t.status === 5);
+                        const impliedResponse = t.responder_id && isResolvedOrClosed;
+                        return hasResponded || impliedResponse;
+                    });
+                    title.innerText = 'Tickets with Agent Response';
+                } else {
+                    currentModalData = globalTicketsData;
+                    title.innerText = 'Agent Response Analysis';
+                }
+            }
+            else if (filterType === 'ageBucket') {
+                const { group, bucket } = extra;
+                currentModalData = extra.tickets;
+                title.innerText = `${group} - ${bucket}`;
+            }
+            else if (filterType === 'responseAging') {
+                const { group, category } = extra;
+                currentModalData = extra.tickets;
+                title.innerText = `${group} - ${category}`;
+            }
+            else if (filterType === 'status') {
+                currentModalData = extra.tickets;
+                title.innerText = `Status: ${extra.status}`;
+            }
+            else if (filterType === 'typeGroup') {
+                currentModalData = extra.tickets;
+                title.innerText = `${extra.group} - ${extra.type}`;
+            }
+
+            currentModalData.sort((a, b) => b._daysOld - a._daysOld);
+            renderModalTable(currentModalData);
+            
+            document.getElementById('ticket-modal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function renderModalTable(data) {
+            const tbody = document.getElementById('modal-tbody');
+            const thead = document.getElementById('modal-header-row');
+            
+            if (!thead) {
+                console.error("Modal header row not found!");
+                return;
+            }
+            
+            // Update Table Headers
+            thead.innerHTML = `
+                <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
+                <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-1/3">Subject</th>
+                <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Group</th>
+                <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Created</th>
+                <th class="p-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Created Age (Days)</th>
+                <th class="p-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Response Age (Days)</th>
+                <th class="p-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
+            `;
+
+            tbody.innerHTML = '';
+            data.forEach(t => {
+                let statusText = t.status === 2 ? 'Open' : (t.status === 3 ? 'Pending' : (t.status === 6 ? 'Reopened' : 'Other'));
+                let statusClass = t.status === 2 || t.status === 6 ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800';
+                
+                const createdDate = new Date(t.created_at).toLocaleDateString();
+                
+                // Calculate Response Age (Days since last response)
+                let responseAge = 'N/A';
+                const now = new Date();
+                
+                // Check for agent response timestamp
+                let lastResponseTime = null;
+                if (t.stats && t.stats.agent_responded_at) {
+                    lastResponseTime = new Date(t.stats.agent_responded_at);
+                } else if (t.stats && t.stats.first_responded_at) {
+                    lastResponseTime = new Date(t.stats.first_responded_at);
+                }
+                
+                if (lastResponseTime) {
+                    const diffTime = Math.abs(now - lastResponseTime);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                    responseAge = diffDays.toFixed(1);
+                } else if (t.responder_id && (t.status === 4 || t.status === 5)) {
+                     // If resolved/closed and has responder but no timestamp, we can't calculate exact days easily without updated_at
+                     // Fallback to updated_at if available as a proxy for last interaction
+                     if (t.updated_at) {
+                         const diffTime = Math.abs(now - new Date(t.updated_at));
+                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                         responseAge = `~${diffDays.toFixed(1)}`;
+                     } else {
+                         responseAge = 'N/A';
+                     }
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-blue-50 transition-colors border-b border-gray-50">
+                        <td class="p-4 font-mono text-blue-600 whitespace-nowrap"><a href="https://ecomplete.freshdesk.com/a/tickets/${t.id}" target="_blank" class="hover:underline">#${t.id}</a></td>
+                        <td class="p-4 font-medium text-gray-800 truncate max-w-xs" title="${t.subject}">${t.subject || 'No Subject'}</td>
+                        <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-bold ${statusClass}">${statusText}</span></td>
+                        <td class="p-4 text-gray-600 text-sm">${t._groupName || 'Unassigned'}</td>
+                        <td class="p-4 text-gray-500 text-xs">${createdDate}</td>
+                        <td class="p-4 text-right font-semibold ${t._daysOld > 5 ? 'text-red-600' : 'text-gray-700'}">${t._daysOld.toFixed(1)}</td>
+                        <td class="p-4 text-right text-gray-500 text-xs font-mono">${responseAge}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="viewTicketDetails(${t.id})" class="text-blue-600 hover:text-blue-800 font-semibold text-xs bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors mr-1">View</button>
+                            <button onclick="editTicket(${t.id})" class="text-gray-600 hover:text-gray-800 font-semibold text-xs bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded transition-colors">Edit</button>
+                        </td>
+                    </tr>`;
+            });
+            if(data.length === 0) tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-500 italic">No tickets found.</td></tr>`;
+        }
+
+        function editTicket(id) {
+            const ticket = globalTicketsData.find(t => t.id === id);
+            if (!ticket) return;
+
+            // Create a simple modal for editing
+            const editModal = document.createElement('div');
+            editModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]';
+            editModal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-96 shadow-xl">
+                    <h3 class="text-lg font-bold mb-4">Edit Ticket #${id}</h3>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select id="edit-status" class="w-full border rounded p-2">
+                            <option value="2" ${ticket.status === 2 ? 'selected' : ''}>Open</option>
+                            <option value="3" ${ticket.status === 3 ? 'selected' : ''}>Pending</option>
+                            <option value="4" ${ticket.status === 4 ? 'selected' : ''}>Resolved</option>
+                            <option value="5" ${ticket.status === 5 ? 'selected' : ''}>Closed</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                        <input type="text" id="edit-type" value="${ticket.type || ''}" class="w-full border rounded p-2" placeholder="e.g., Question, Incident">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                        <select id="edit-priority" class="w-full border rounded p-2">
+                            <option value="1" ${ticket.priority === 1 ? 'selected' : ''}>Low</option>
+                            <option value="2" ${ticket.priority === 2 ? 'selected' : ''}>Medium</option>
+                            <option value="3" ${ticket.priority === 3 ? 'selected' : ''}>High</option>
+                            <option value="4" ${ticket.priority === 4 ? 'selected' : ''}>Urgent</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button id="cancel-edit" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+                        <button id="save-edit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(editModal);
+
+            document.getElementById('cancel-edit').onclick = () => editModal.remove();
+            document.getElementById('save-edit').onclick = async () => {
+                const newStatus = parseInt(document.getElementById('edit-status').value);
+                const newType = document.getElementById('edit-type').value;
+                const newPriority = parseInt(document.getElementById('edit-priority').value);
+
+                // Optimistic update
+                ticket.status = newStatus;
+                ticket.type = newType;
+                ticket.priority = newPriority;
+
+                // Re-render
+                processAndRender(globalTicketsData, globalGroupMap);
+                renderModalTable(currentModalData); // Re-render current modal view
+
+                // Mock API call (since we don't have a real backend update endpoint yet)
+                // In a real app, this would be: await fetch(`/api/tickets/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus, type: newType, priority: newPriority }) });
+                
+                alert(`Ticket #${id} updated locally!`);
+                editModal.remove();
+            };
+        }
+
+        async function viewTicketDetails(ticketId) {
+            const modal = document.getElementById('ticket-details-modal');
+            const title = document.getElementById('details-modal-title');
+            const body = document.getElementById('details-modal-body');
+            
+            title.innerText = `Ticket #${ticketId}`;
+            body.innerHTML = '<div class="flex justify-center items-center h-32"><span class="animate-spin text-3xl">⏳</span></div>';
+            
+            modal.classList.remove('hidden');
+            
+            try {
+                const res = await fetch(`/api/tickets/${ticketId}`);
+                if (!res.ok) throw new Error("Failed to fetch ticket details");
+                const ticket = await res.json();
+                
+                title.innerText = `Ticket #${ticket.id} - ${ticket.subject}`;
+                
+                // Basic styling for the HTML description returned by Freshdesk
+                body.innerHTML = `
+                    <div class="mb-6 flex flex-wrap gap-3 text-sm">
+                        <span class="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium border border-blue-100">Status: ${ticket.status === 2 ? 'Open' : (ticket.status === 3 ? 'Pending' : ticket.status)}</span>
+                        <span class="bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-medium border border-purple-100">Priority: ${ticket.priority}</span>
+                        <span class="bg-gray-50 text-gray-700 px-3 py-1 rounded-full font-medium border border-gray-200">Created: ${new Date(ticket.created_at).toLocaleString()}</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Description</h3>
+                    <div class="prose max-w-none text-gray-800">
+                        ${ticket.description || '<em class="text-gray-400">No description provided.</em>'}
+                    </div>
+                `;
+            } catch (error) {
+                body.innerHTML = `<div class="text-red-500 p-4 bg-red-50 rounded-lg border border-red-100">Error loading ticket details: ${error.message}</div>`;
+            }
+        }
+
+        function closeDetailsModal() {
+            document.getElementById('ticket-details-modal').classList.add('hidden');
+        }
+
+        function filterModalTable() {
+            const query = document.getElementById('modal-search').value.toLowerCase();
+            const filtered = currentModalData.filter(t => 
+                (t.subject || '').toLowerCase().includes(query) || (t.id || '').toString().includes(query)
+            );
+            renderModalTable(filtered);
+        }
+
+        function downloadCSV() {
+            if(!currentModalData || currentModalData.length === 0) return;
+            let csv = "ID,Subject,Status,Group,Age(Days)\n";
+            currentModalData.forEach(t => {
+                let statusText = t.status === 2 ? 'Open' : 'Pending/Waiting';
+                let safeSubject = (t.subject || '').replace(/"/g, '""'); // Escape quotes for CSV
+                csv += `${t.id},"${safeSubject}",${statusText},"${t._groupName}",${t._daysOld.toFixed(1)}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `freshdesk_export_${new Date().getTime()}.csv`);
+            a.click();
+        }
+
+        function closeModal() {
+            document.getElementById('ticket-modal').classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Global Charts
+        let brandVolumeChartInst, ageBucketChartInst, statusChartInst, typeChartInst, agingResponseChartInst;
+        function renderCharts(total, sortedGroups, statusCountsDetailed, typeStats, responseAgingStats) {
+            if(brandVolumeChartInst) brandVolumeChartInst.destroy();
+            if(ageBucketChartInst) ageBucketChartInst.destroy();
+            if(statusChartInst) statusChartInst.destroy();
+            if(typeChartInst) typeChartInst.destroy();
+            if(agingResponseChartInst) agingResponseChartInst.destroy();
+
+            const groupLabels = sortedGroups.map(g => wrapLabel(g[0]));
+            
+            const chartFontColor = '#fff';
+
+            const groupColors = [
+                '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', 
+                '#EC4899', '#06B6D4', '#F97316', '#14B8A6', '#6366F1',
+                '#A855F7', '#D946EF', '#F43F5E', '#10B981', '#84CC16'
+            ];
+
+            brandVolumeChartInst = new Chart(document.getElementById('brandVolumeChart'), {
+                type: 'bar',
+                data: { 
+                    labels: groupLabels, 
+                    datasets: [{ 
+                        label: 'Active Tickets', 
+                        data: sortedGroups.map(g => g[1].total), 
+                        backgroundColor: sortedGroups.map((_, i) => groupColors[i % groupColors.length]), 
+                        borderRadius: 4 
+                    }] 
+                },
+                options: { 
+                    indexAxis: 'y', // Horizontal bar chart
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const groupName = sortedGroups[context.dataIndex][0];
+                                    const stats = sortedGroups[context.dataIndex][1];
+                                    const avgAge = stats.total > 0 ? (stats.totalAgeDays / stats.total).toFixed(1) : 0;
+                                    const percentage = total > 0 ? ((stats.total / total) * 100).toFixed(1) : 0;
+                                    
+                                    let lines = [
+                                        `Total: ${stats.total} (${percentage}%)`,
+                                        `Avg Age: ${avgAge} Days`,
+                                        `Open: ${stats.statusCounts['Open']} | Pending: ${stats.statusCounts['Pending/Waiting']}`,
+                                        `Responded: ${stats.responseCounts.responded} | No Response: ${stats.responseCounts.noResponse}`,
+                                        `--- Types ---`
+                                    ];
+                                    if (stats.types) {
+                                        Object.entries(stats.types).forEach(([type, count]) => {
+                                            lines.push(`  ${type}: ${count}`);
+                                        });
+                                    }
+                                    return lines;
+                                }
+                            }
+                        },
+                        datalabels: { 
+                            color: '#ffffff', 
+                            anchor: 'center', 
+                            align: 'center',
+                            font: { weight: 'bold' },
+                            formatter: (value) => value > 0 ? value : ''
+                        }
+                    },
+                    scales: {
+                        x: { beginAtZero: true }
+                    }
+                }
+            });
+
+            // Update Age Bucket Chart Logic
+            // New Buckets: < 3 Days (Green), 3-7 Days (Orange), 8+ Days (Red)
+            
+            // We need to re-calculate buckets based on new criteria for the chart display
+            // Note: The backend data structure (age1, age2, age5, agePlus) is fixed based on previous logic (<2, 2-5, 5+).
+            // To support <3, 3-7, 8+, we need to iterate through the raw tickets in sortedGroups again.
+            
+            const bucket1Data = []; // < 3 Days
+            const bucket2Data = []; // 3-7 Days
+            const bucket3Data = []; // 8+ Days
+            
+            const bucket1Tickets = [];
+            const bucket2Tickets = [];
+            const bucket3Tickets = [];
+
+            sortedGroups.forEach(g => {
+                const tickets = [...g[1].tickets.age1, ...g[1].tickets.age2, ...g[1].tickets.age5, ...g[1].tickets.agePlus];
+                
+                const b1 = tickets.filter(t => t._daysOld < 3);
+                const b2 = tickets.filter(t => t._daysOld >= 3 && t._daysOld <= 7);
+                const b3 = tickets.filter(t => t._daysOld > 7);
+                
+                bucket1Data.push(b1.length);
+                bucket2Data.push(b2.length);
+                bucket3Data.push(b3.length);
+                
+                bucket1Tickets.push(b1);
+                bucket2Tickets.push(b2);
+                bucket3Tickets.push(b3);
+            });
+
+            ageBucketChartInst = new Chart(document.getElementById('ageBucketChart'), {
+                type: 'bar',
+                data: { labels: groupLabels, datasets: [
+                    { label: '< 3 Days', data: bucket1Data, backgroundColor: '#10B981' }, // Green
+                    { label: '3-7 Days', data: bucket2Data, backgroundColor: '#F97316' }, // Orange
+                    { label: '8+ Days', data: bucket3Data, backgroundColor: '#EF4444' }  // Red
+                ]},
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { x: { stacked: true }, y: { stacked: true } },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const datasetIdx = elements[0].datasetIndex;
+                            const groupName = sortedGroups[idx][0];
+                            
+                            let tickets = [];
+                            let bucket = '';
+                            if (datasetIdx === 0) {
+                                tickets = bucket1Tickets[idx];
+                                bucket = '< 3 Days';
+                            } else if (datasetIdx === 1) {
+                                tickets = bucket2Tickets[idx];
+                                bucket = '3-7 Days';
+                            } else {
+                                tickets = bucket3Tickets[idx];
+                                bucket = '8+ Days';
+                            }
+                            openModal('ageBucket', { group: groupName, bucket, tickets });
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const groupName = sortedGroups[context.dataIndex][0];
+                                    const datasetLabel = context.dataset.label;
+                                    const totalForBucket = context.parsed.y;
+                                    
+                                    let bucketTickets = [];
+                                    if (context.datasetIndex === 0) bucketTickets = bucket1Tickets[context.dataIndex];
+                                    else if (context.datasetIndex === 1) bucketTickets = bucket2Tickets[context.dataIndex];
+                                    else bucketTickets = bucket3Tickets[context.dataIndex];
+                                    
+                                    let bucketAgeDays = 0, bucketResponded = 0, bucketNoResponse = 0;
+                                    const typeBreakdown = {};
+                                    bucketTickets.forEach(t => {
+                                        bucketAgeDays += t._daysOld;
+                                        
+                                        const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                                        if(hasResponded) bucketResponded++; else bucketNoResponse++;
+
+                                        const type = t.type && t.type.trim() !== '' ? t.type : 'Unclassified';
+                                        typeBreakdown[type] = (typeBreakdown[type] || 0) + 1;
+                                    });
+                                    
+                                    const avgAge = totalForBucket > 0 ? (bucketAgeDays / totalForBucket).toFixed(1) : 0;
+                                    let lines = [
+                                        `${datasetLabel}: ${totalForBucket}`,
+                                        `Avg Age: ${avgAge} Days`,
+                                        `Responded: ${bucketResponded} | No Response: ${bucketNoResponse}`,
+                                        `--- Types ---`
+                                    ];
+
+                                    Object.entries(typeBreakdown).forEach(([type, count]) => {
+                                        lines.push(`  ${type}: ${count}`);
+                                    });
+                                    
+                                    return lines;
+                                }
+                            }
+                        },
+                        datalabels: { color: chartFontColor }
+                    }
+                }
+            });
+
+            agingResponseChartInst = new Chart(document.getElementById('agingResponseChart'), {
+                type: 'bar',
+                data: { 
+                    labels: groupLabels, 
+                    datasets: [
+                        { label: 'No Response 5d+', data: sortedGroups.map(g => responseAgingStats[g[0]].no_response_plus), backgroundColor: '#7f1d1d' }, // Dark Red
+                        { label: 'No Response 2-5d', data: sortedGroups.map(g => responseAgingStats[g[0]].no_response_5), backgroundColor: '#dc2626' }, // Red
+                        { label: 'No Response < 2d', data: sortedGroups.map(g => responseAgingStats[g[0]].no_response_1 + responseAgingStats[g[0]].no_response_2), backgroundColor: '#f87171' }, // Light Red
+                        { label: 'Responded 5d+', data: sortedGroups.map(g => responseAgingStats[g[0]].responded_plus), backgroundColor: '#064e3b' }, // Dark Green
+                        { label: 'Responded 2-5d', data: sortedGroups.map(g => responseAgingStats[g[0]].responded_5), backgroundColor: '#10b981' }, // Green
+                        { label: 'Responded < 2d', data: sortedGroups.map(g => responseAgingStats[g[0]].responded_1 + responseAgingStats[g[0]].responded_2), backgroundColor: '#4ade80' }, // Light Green
+                    ]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { x: { stacked: true }, y: { stacked: true, ticks: { precision: 0 } } },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const datasetIdx = elements[0].datasetIndex;
+                            const groupName = sortedGroups[idx][0];
+                            const groupData = responseAgingStats[groupName];
+                            let tickets = [];
+                            let category = '';
+                            const labels = [
+                                'No Response 5d+', 'No Response 2-5d', 'No Response < 2d',
+                                'Responded 5d+', 'Responded 2-5d', 'Responded < 2d'
+                            ];
+                            category = labels[datasetIdx];
+                            
+                            if (datasetIdx === 0) tickets = groupData.tickets.no_response_plus;
+                            else if (datasetIdx === 1) tickets = groupData.tickets.no_response_5;
+                            else if (datasetIdx === 2) tickets = [...groupData.tickets.no_response_1, ...groupData.tickets.no_response_2];
+                            else if (datasetIdx === 3) tickets = groupData.tickets.responded_plus;
+                            else if (datasetIdx === 4) tickets = groupData.tickets.responded_5;
+                            else if (datasetIdx === 5) tickets = [...groupData.tickets.responded_1, ...groupData.tickets.responded_2];
+
+                            openModal('responseAging', { group: groupName, category, tickets });
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const groupName = sortedGroups[context.dataIndex][0];
+                                    const groupData = responseAgingStats[groupName];
+                                    const datasetLabel = context.dataset.label;
+                                    const totalForCategory = context.parsed.y;
+                                    
+                                    // Calculate type breakdown for this specific category
+                                    let categoryTickets = [];
+                                    const datasetIdx = context.datasetIndex;
+                                    if (datasetIdx === 0) categoryTickets = groupData.tickets.no_response_plus;
+                                    else if (datasetIdx === 1) categoryTickets = groupData.tickets.no_response_5;
+                                    else if (datasetIdx === 2) categoryTickets = [...groupData.tickets.no_response_1, ...groupData.tickets.no_response_2];
+                                    else if (datasetIdx === 3) categoryTickets = groupData.tickets.responded_plus;
+                                    else if (datasetIdx === 4) categoryTickets = groupData.tickets.responded_5;
+                                    else if (datasetIdx === 5) categoryTickets = [...groupData.tickets.responded_1, ...groupData.tickets.responded_2];
+                                    
+                                    let catAgeDays = 0, catOpen = 0, catPending = 0;
+                                    const typeBreakdown = {};
+                                    categoryTickets.forEach(t => {
+                                        catAgeDays += t._daysOld;
+                                        if (t.status === 2) catOpen++; else catPending++;
+
+                                        const type = t.type && t.type.trim() !== '' ? t.type : 'Unclassified';
+                                        typeBreakdown[type] = (typeBreakdown[type] || 0) + 1;
+                                    });
+                                    
+                                    const avgAge = totalForCategory > 0 ? (catAgeDays / totalForCategory).toFixed(1) : 0;
+                                    let lines = [
+                                        `${datasetLabel}: ${totalForCategory} Tickets`,
+                                        `Avg Age: ${avgAge} Days`,
+                                        `Open: ${catOpen} | Pending: ${catPending}`,
+                                        `--- Types ---`
+                                    ];
+
+                                    Object.entries(typeBreakdown).forEach(([type, count]) => {
+                                        lines.push(`  ${type}: ${count}`);
+                                    });
+                                    
+                                    return lines;
+                                }
+                            }
+                        },
+                        datalabels: { color: chartFontColor, display: (c) => c.dataset.data[c.dataIndex] > 0 }
+                    }
+                }
+            });
+
+            statusChartInst = new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: { labels: Object.keys(statusCountsDetailed), datasets: [{ data: Object.values(statusCountsDetailed).map(s => s.total), backgroundColor: ['#EF4444', '#F59E0B'] }] },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const statusLabel = Object.keys(statusCountsDetailed)[idx];
+                            const tickets = statusCountsDetailed[statusLabel].tickets;
+                            openModal('status', { status: statusLabel, tickets });
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const statusLabel = context.label;
+                                    const statusData = statusCountsDetailed[statusLabel];
+                                    const avgAge = statusData.total > 0 ? (statusData.totalAgeDays / statusData.total).toFixed(1) : 0;
+                                    let lines = [
+                                        `${statusLabel}: ${statusData.total} Tickets`,
+                                        `Avg Age: ${avgAge} Days`,
+                                        `--- Breakdown ---`
+                                    ];
+                                    
+                                    // Group -> Type hierarchy
+                                    const groupTypeMap = {};
+                                    statusData.tickets.forEach(t => {
+                                        const g = t._groupName || 'Unassigned';
+                                        const type = t.type && t.type.trim() !== '' ? t.type : 'Unclassified';
+                                        if (!groupTypeMap[g]) groupTypeMap[g] = {};
+                                        groupTypeMap[g][type] = (groupTypeMap[g][type] || 0) + 1;
+                                    });
+
+                                    Object.entries(groupTypeMap)
+                                        .sort((a, b) => {
+                                            // Sort groups by total tickets in that group
+                                            const totalA = Object.values(a[1]).reduce((sum, v) => sum + v, 0);
+                                            const totalB = Object.values(b[1]).reduce((sum, v) => sum + v, 0);
+                                            return totalB - totalA;
+                                        })
+                                        .forEach(([group, types]) => {
+                                            const groupTotal = Object.values(types).reduce((sum, v) => sum + v, 0);
+                                            lines.push(`• ${group}: ${groupTotal}`);
+                                            Object.entries(types)
+                                                .sort((a, b) => b[1] - a[1])
+                                                .forEach(([type, count]) => {
+                                                    lines.push(`   - ${type}: ${count}`);
+                                                });
+                                        });
+
+                                    return lines;
+                                }
+                            }
+                        },
+                        datalabels: { color: chartFontColor }
+                    }
+                }
+            });
+
+            const typeLabels = Object.keys(typeStats);
+            typeChartInst = new Chart(document.getElementById('typeChart'), {
+                type: 'bar',
+                data: { 
+                    labels: typeLabels.map(wrapLabel), 
+                    datasets: sortedGroups.map((g, i) => {
+                        const groupName = g[0];
+                        return {
+                            label: groupName,
+                            data: typeLabels.map(type => typeStats[type].groups[groupName] || 0),
+                            backgroundColor: groupColors[i % groupColors.length]
+                        };
+                    })
+                },
+                options: { 
+                    indexAxis: 'y', 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { x: { stacked: true }, y: { stacked: true } },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const datasetIdx = elements[0].datasetIndex;
+                            const dataIdx = elements[0].index;
+                            const groupName = sortedGroups[datasetIdx][0];
+                            const typeName = typeLabels[dataIdx];
+                            const tickets = typeStats[typeName].tickets.filter(t => t._groupName === groupName);
+                            openModal('typeGroup', { type: typeName, group: groupName, tickets });
+                        }
+                    },
+                    plugins: { 
+                        legend: { display: true, position: 'right', labels: { boxWidth: 10, font: { size: 10 } } },
+                        tooltip: {
+                            callbacks: {
+                                beforeBody: function(context) {
+                                    if (context.length === 0) return '';
+                                    const typeName = typeLabels[context[0].dataIndex];
+                                    const stats = typeStats[typeName];
+                                    const avgAge = stats.total > 0 ? (stats.totalAgeDays / stats.total).toFixed(1) : 0;
+                                    return [
+                                        `Total for Type: ${stats.total}`,
+                                        `Avg Age: ${avgAge} Days`,
+                                        `Responded: ${stats.responseCounts.responded} | No Response: ${stats.responseCounts.noResponse}`,
+                                        `-------------------`
+                                    ];
+                                },
+                                label: function(context) {
+                                    const groupName = context.dataset.label;
+                                    const count = context.parsed.x;
+                                    if (count === 0) return null;
+                                    return `${groupName}: ${count} Tickets`;
+                                }
+                            }
+                        },
+                        datalabels: { 
+                            color: chartFontColor, 
+                            display: (c) => c.dataset.data[c.dataIndex] > 0,
+                            formatter: (value) => value
+                        }
+                    } 
+                }
+            });
+        }
+
+        async function analyseSentiment() {
+            if (!globalTicketsData || globalTicketsData.length === 0) {
+                alert("No tickets available to analyse.");
+                return;
+            }
+
+            const btn = document.getElementById('ai-btn');
+            const section = document.getElementById('ai-sentiment-section');
+            const loading = document.getElementById('ai-loading');
+            const resultsContainer = document.getElementById('ai-results');
+            const statsContainer = document.getElementById('sentiment-stats');
+
+            // UI State updates
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">⏳</span> Analysing...';
+            section.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            statsContainer.classList.add('hidden');
+
+            // Grab the oldest 20 unresolved tickets to analyse
+            const oldestTickets = [...globalTicketsData]
+                .sort((a, b) => b._daysOld - a._daysOld)
+                .slice(0, 20)
+                .map(t => ({ id: t.id, subject: t.subject, daysOld: Math.round(t._daysOld) }));
+
+            try {
+                const response = await fetch('/api/ai/sentiment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tickets: oldestTickets })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`Backend Error: ${response.status} ${errorData.error || ''}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update Stats
+                let frustratedCount = 0, neutralCount = 0, positiveCount = 0;
+                resultsContainer.innerHTML = '';
+
+                data.results.forEach(result => {
+                    let colorClass = 'bg-gray-50 border-gray-200 text-gray-800';
+                    let badgeClass = 'bg-gray-200 text-gray-700';
+                    let icon = '⚪';
+
+                    if (result.sentiment === 'Frustrated') {
+                        frustratedCount++;
+                        colorClass = 'bg-red-50 border-red-200 text-red-900';
+                        badgeClass = 'bg-red-200 text-red-800';
+                        icon = '🔥';
+                    } else if (result.sentiment === 'Positive') {
+                        positiveCount++;
+                        colorClass = 'bg-green-50 border-green-200 text-green-900';
+                        badgeClass = 'bg-green-200 text-green-800';
+                        icon = '💚';
+                    } else {
+                        neutralCount++;
+                        colorClass = 'bg-yellow-50 border-yellow-200 text-yellow-900';
+                        badgeClass = 'bg-yellow-200 text-yellow-800';
+                        icon = '😐';
+                    }
+
+                    resultsContainer.innerHTML += `
+                        <div class="p-4 rounded-xl border ${colorClass} flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="font-mono text-xs opacity-70">#${result.id}</span>
+                                    <span class="text-xs font-bold px-2 py-1 rounded ${badgeClass}">${icon} ${result.sentiment}</span>
+                                </div>
+                                <h4 class="font-semibold text-sm mb-2 line-clamp-2" title="${result.subject}">${result.subject}</h4>
+                            </div>
+                            <p class="text-xs opacity-80 italic mt-2 border-t border-black/10 pt-2">"${result.reasoning}"</p>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('count-frustrated').innerText = frustratedCount;
+                document.getElementById('count-neutral').innerText = neutralCount;
+                document.getElementById('count-positive').innerText = positiveCount;
+
+                // Show results
+                loading.classList.add('hidden');
+                resultsContainer.classList.remove('hidden');
+                statsContainer.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("AI Analysis Failed:", error);
+                loading.classList.add('hidden');
+                resultsContainer.innerHTML = `<div class="col-span-3 text-center text-red-500 font-bold p-8 bg-red-50 rounded-xl border border-red-200">⚠️ Failed to analyse sentiment: ${error.message}</div>`;
+                resultsContainer.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '✨ AI Sentiment Analysis';
+            }
+        }
+
+        function getEmailBriefHTML() {
+            // Construct a simplified HTML representation of the current dashboard state for Email Brief
+            const total = document.getElementById('kpi-total-val').innerText;
+            const topTypeVal = document.getElementById('kpi-top-type-val').innerText;
+            const topTypeLabel = document.getElementById('kpi-top-type-label').innerText;
+            const open = document.getElementById('kpi-open-val').innerText;
+            const critical = document.getElementById('kpi-critical-val').innerText;
+            const avgAge = document.getElementById('kpi-avg-age-val').innerText;
+            
+            const meterNo = document.getElementById('meter-no-val').innerText;
+            const meterYes = document.getElementById('meter-yes-val').innerText;
+
+            // 1. Active Volume by Group (Top 10)
+            let groupRows = '';
+            if (globalGroupStats) {
+                const sortedGroups = Object.entries(globalGroupStats).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
+                sortedGroups.forEach(g => {
+                     groupRows += `
+                        <tr>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee;">${g[0]}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;"><strong>${g[1].total}</strong></td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${g[1].statusCounts?.['Open'] || 0}</td>
+                        </tr>
+                     `;
+                });
+            }
+
+            // 2. Active by Type (Top 5)
+            let typeRows = '';
+            if (globalTypeStats) {
+                const sortedTypes = Object.entries(globalTypeStats).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
+                sortedTypes.forEach(t => {
+                    typeRows += `
+                        <tr>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee;">${t[0]}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;"><strong>${t[1].total}</strong></td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 3. Detailed Aging Analysis (Top 10 Groups)
+            let agingRows = '';
+            if (globalGroupStats) {
+                const sortedGroups = Object.entries(globalGroupStats).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
+                sortedGroups.forEach(g => {
+                    agingRows += `
+                        <tr>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee;">${g[0]}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #10b981;">${g[1].age1}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #f59e0b;">${g[1].age2}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #ef4444;">${g[1].age5}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 4. Aging & Response Analysis (Top 10 Groups)
+            let responseRows = '';
+            if (globalResponseAgingStats) {
+                const sortedResponseGroups = Object.entries(globalResponseAgingStats).sort((a, b) => (b[1].responded_plus + b[1].responded_5 + b[1].responded_2 + b[1].responded_1 + b[1].no_response_plus + b[1].no_response_5 + b[1].no_response_2 + b[1].no_response_1) - (a[1].responded_plus + a[1].responded_5 + a[1].responded_2 + a[1].responded_1 + a[1].no_response_plus + a[1].no_response_5 + a[1].no_response_2 + a[1].no_response_1)).slice(0, 10);
+                sortedResponseGroups.forEach(g => {
+                    // Calculate totals based on the structure in processAndRender
+                    const totalResponded = g[1].responded_plus + g[1].responded_5 + g[1].responded_2 + g[1].responded_1;
+                    const totalNoResponse = g[1].no_response_plus + g[1].no_response_5 + g[1].no_response_2 + g[1].no_response_1;
+                    
+                    responseRows += `
+                        <tr>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee;">${g[0]}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #10b981;">${totalResponded}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #ef4444;">${totalNoResponse}</td>
+                            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; color: #b91c1c; font-weight: bold;">${g[1].no_response_plus}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 5. Queue State Overview
+            let queueStateHtml = '';
+            if (globalTicketsData) {
+                const openCount = globalTicketsData.filter(t => t.status === 2).length;
+                const pendingCount = globalTicketsData.filter(t => t.status === 3 || t.status === 6).length; // 3=Pending, 6=Reopened (often treated as open/pending)
+                const totalCount = globalTicketsData.length;
+                
+                const openPct = totalCount > 0 ? Math.round((openCount / totalCount) * 100) : 0;
+                const pendingPct = totalCount > 0 ? Math.round((pendingCount / totalCount) * 100) : 0;
+
+                queueStateHtml = `
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Queue State Overview</h3>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="color: #ef4444; font-weight: bold;">Open: ${openCount}</span>
+                            <span style="color: #f59e0b; font-weight: bold;">Pending/Waiting: ${pendingCount}</span>
+                        </div>
+                        <div style="height: 20px; background: #eee; border-radius: 10px; overflow: hidden; display: flex;">
+                            <div style="width: ${openPct}%; background: #ef4444;"></div>
+                            <div style="width: ${pendingPct}%; background: #f59e0b;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 11px; color: #64748b;">
+                            <span>${openPct}% Requiring Action</span>
+                            <span>${pendingPct}% Waiting</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                    <h1 style="color: #1e3a8a; text-align: center;">Support Ecosystem Pulse Check</h1>
+                    <p style="text-align: center; color: #666; font-size: 12px;">Data Range: Last 200 Days | Generated: ${new Date().toLocaleString()}</p>
+                    
+                    <!-- Key Metrics -->
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                        <h2 style="margin-top: 0; color: #334155; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Key Metrics</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 10px;"><strong>Total Active:</strong></td>
+                                <td style="padding: 10px; text-align: right; font-size: 18px; color: #10b981;">${total}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px;"><strong>Top Type (${topTypeLabel}):</strong></td>
+                                <td style="padding: 10px; text-align: right; font-size: 18px; color: #3b82f6;">${topTypeVal}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px;"><strong>Backlog (Open):</strong></td>
+                                <td style="padding: 10px; text-align: right; font-size: 18px; color: #8b5cf6;">${open}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px;"><strong>Critical Aging (>2d No Resp):</strong></td>
+                                <td style="padding: 10px; text-align: right; font-size: 18px; color: #ef4444;">${critical}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px;"><strong>Avg Age:</strong></td>
+                                <td style="padding: 10px; text-align: right; font-size: 18px; color: #f97316;">${avgAge}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- Agent Response Meter -->
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Agent Response Meter</h3>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="color: #ef4444; font-weight: bold;">No Response: ${meterNo}</span>
+                            <span style="color: #10b981; font-weight: bold;">Responded: ${meterYes}</span>
+                        </div>
+                        <div style="height: 20px; background: #eee; border-radius: 10px; overflow: hidden; display: flex;">
+                            <div style="width: ${(parseInt(meterNo) / (parseInt(meterNo) + parseInt(meterYes)) * 100)}%; background: #ef4444;"></div>
+                            <div style="width: ${(parseInt(meterYes) / (parseInt(meterNo) + parseInt(meterYes)) * 100)}%; background: #10b981;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Queue State Overview -->
+                    ${queueStateHtml}
+
+                    <!-- Active Volume by Group -->
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Active Volume by Group</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #64748b;">
+                                    <th style="padding: 8px; text-align: left;">Group</th>
+                                    <th style="padding: 8px; text-align: right;">Total</th>
+                                    <th style="padding: 8px; text-align: right;">Open</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${groupRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Active by Type -->
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Active by Type</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #64748b;">
+                                    <th style="padding: 8px; text-align: left;">Type</th>
+                                    <th style="padding: 8px; text-align: right;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${typeRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Detailed Aging Analysis -->
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Detailed Aging Analysis</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #64748b;">
+                                    <th style="padding: 8px; text-align: left;">Group</th>
+                                    <th style="padding: 8px; text-align: center; color: #10b981;">&lt; 3 Days</th>
+                                    <th style="padding: 8px; text-align: center; color: #f59e0b;">3-7 Days</th>
+                                    <th style="padding: 8px; text-align: center; color: #ef4444;">8+ Days</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${agingRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Aging & Response Analysis -->
+                    <div style="background: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0; color: #334155;">Aging & Response Analysis</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #64748b;">
+                                    <th style="padding: 8px; text-align: left;">Group</th>
+                                    <th style="padding: 8px; text-align: center; color: #10b981;">Responded</th>
+                                    <th style="padding: 8px; text-align: center; color: #ef4444;">No Resp</th>
+                                    <th style="padding: 8px; text-align: center; color: #b91c1c;">&gt; 2d No Resp</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${responseRows}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <p style="text-align: center; margin-top: 30px; font-size: 11px; color: #94a3b8;">
+                        Sent from Support Ecosystem Pulse Check Dashboard
+                    </p>
+                </div>
+            `;
+        }
+
+        async function sendMorningBrief() {
+            if (!globalTicketsData || globalTicketsData.length === 0) {
+                alert("No data available. Please fetch data first.");
+                return;
+            }
+
+            const btn = document.getElementById('email-brief-btn');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">⏳</span> Sending...';
+
+            try {
+                const htmlContent = getEmailBriefHTML();
+                
+                // Send simplified data payload for server to construct email or send HTML directly
+                // Here we send the constructed HTML
+                const response = await fetch('/api/send-morning-brief', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        htmlContent: htmlContent,
+                        subject: `Support Pulse Check - ${new Date().toLocaleDateString()}`
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Failed to send email");
+
+                alert("✅ Morning Brief Email sent successfully!");
+            } catch (error) {
+                console.error("Email Error:", error);
+                alert(`⚠️ Failed to send email: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        async function generateVoiceBriefing() {
+            if (!globalTicketsData || globalTicketsData.length === 0) {
+                alert("No data available for briefing.");
+                return;
+            }
+
+            const btn = document.getElementById('voice-btn');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">⏳</span> Preparing...';
+
+            // Prepare a summary of the data
+            const total = globalTicketsData.length;
+            const open = globalTicketsData.filter(t => t.status === 2).length;
+            
+            // Align critical definition with dashboard: > 2 days and no response
+            const critical = globalTicketsData.filter(t => {
+                const hasResponded = (!!t.stats?.agent_responded_at || !!t.stats?.first_responded_at);
+                return t._daysOld > 2 && !hasResponded;
+            }).length;
+            
+            const groupSummary = Object.entries(globalTicketsData.reduce((acc, t) => {
+                acc[t._groupName] = (acc[t._groupName] || 0) + 1;
+                return acc;
+            }))
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([name, count]) => `${name} with ${count} tickets`)
+            .join(', ');
+
+            const summaryText = `
+                Here is your support pulse check. 
+                There are currently ${total} active tickets in the last 2 years window. 
+                ${open} tickets are in Open status requiring action.
+                ${critical} tickets are critical, meaning they are older than 2 days with no agent response.
+                The top groups by volume are ${groupSummary}.
+            `;
+
+            try {
+                const response = await fetch('/api/ai/voice-briefing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dataSummary: summaryText })
+                });
+
+                if (!response.ok) {
+                    throw new Error("Server/AI generation failed, switching to local voice.");
+                }
+
+                const blob = await response.blob();
+                const audio = new Audio(URL.createObjectURL(blob));
+                audio.play();
+                
+                btn.innerHTML = '🔊 Playing (AI)...';
+                audio.onended = () => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                };
+            } catch (error) {
+                console.warn("Falling back to browser TTS:", error);
+                
+                // Browser Native TTS Fallback
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(summaryText);
+                    // Try to select a good English voice
+                    const voices = window.speechSynthesis.getVoices();
+                    const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha')) || voices[0];
+                    if (preferredVoice) utterance.voice = preferredVoice;
+                    
+                    utterance.rate = 1.1; // Slightly faster
+                    utterance.pitch = 1.0;
+
+                    btn.innerHTML = '🔊 Playing (Local)...';
+                    utterance.onend = () => {
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
+                    };
+                    
+                    window.speechSynthesis.cancel(); // Clear queue
+                    window.speechSynthesis.speak(utterance);
+                } else {
+                    alert("⚠️ Voice Briefing Unavailable: Server is down and your browser does not support local text-to-speech.");
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+            }
+        }
+
+
+        function getDashboardMirrorHTML() {
+            // Clone the document to modify it for the mirror
+            const clone = document.documentElement.cloneNode(true);
+            
+            // Sync input values to clone (so search terms etc. are preserved)
+            const originalInputs = document.querySelectorAll('input, textarea, select');
+            const clonedInputs = clone.querySelectorAll('input, textarea, select');
+            
+            for (let i = 0; i < originalInputs.length; i++) {
+                const input = originalInputs[i];
+                const cloned = clonedInputs[i];
+                if (!cloned) continue;
+                
+                if (input.tagName === 'SELECT') {
+                    const options = cloned.querySelectorAll('option');
+                    options.forEach(opt => {
+                        if (opt.value === input.value) opt.setAttribute('selected', 'selected');
+                        else opt.removeAttribute('selected');
+                    });
+                } else if (input.tagName === 'TEXTAREA') {
+                    cloned.textContent = input.value;
+                } else {
+                    cloned.setAttribute('value', input.value);
+                    if (input.type === 'checkbox' || input.type === 'radio') {
+                        if (input.checked) cloned.setAttribute('checked', 'checked');
+                        else cloned.removeAttribute('checked');
+                    }
+                }
+            }
+            
+            // Remove the initial screen and loading overlay from the mirror
+            const initialScreen = clone.querySelector('#initial-screen');
+            const loadingOverlay = clone.querySelector('#loading-overlay');
+            if (initialScreen) initialScreen.remove();
+            if (loadingOverlay) loadingOverlay.remove();
+
+            // Remove the buttons from the header in the mirror
+            const headerButtons = clone.querySelector('header .flex.gap-2');
+            if (headerButtons) headerButtons.remove();
+
+            // Inject the data and initialization script
+            const script = document.createElement('script');
+            script.textContent = `
+                window.globalTicketsData = ${JSON.stringify(globalTicketsData)};
+                window.globalGroupMap = ${JSON.stringify(globalGroupMap)};
+                window.globalGroupStats = ${JSON.stringify(globalGroupStats)};
+                window.globalTypeStats = ${JSON.stringify(globalTypeStats)};
+                window.currentModalData = ${JSON.stringify(currentModalData)};
+                
+                document.addEventListener('DOMContentLoaded', () => {
+                    document.getElementById('initial-screen')?.remove();
+                    document.getElementById('loading-overlay')?.remove();
+                    
+                    if (window.globalTicketsData && window.globalGroupMap) {
+                        // Restore global state
+                        globalGroupMap = window.globalGroupMap;
+                        globalGroupStats = window.globalGroupStats || {};
+                        globalTypeStats = window.globalTypeStats || {};
+                        if (window.currentModalData) {
+                            currentModalData = window.currentModalData;
+                        }
+
+                        // Re-render dashboard
+                        processAndRender(window.globalTicketsData, window.globalGroupMap);
+                    }
+                });
+            `;
+            clone.querySelector('body').appendChild(script);
+
+            return '<!DOCTYPE html>\n' + clone.outerHTML;
+        }
+
+        async function generateReportLink() {
+            if (!globalTicketsData || globalTicketsData.length === 0) {
+                alert("No data available to generate a report.");
+                return;
+            }
+
+            const btn = document.getElementById('report-link-btn');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">⏳</span> Generating...';
+
+            const htmlContent = getDashboardMirrorHTML();
+            const timestamp = new Date().getTime();
+            const filename = `dashboard_mirror_${timestamp}.html`;
+
+            try {
+                // 1. Trigger local download first (always works)
+                const blob = new Blob([htmlContent], { type: 'text/html' });
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('href', downloadUrl);
+                a.setAttribute('download', filename);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+
+                // 2. Try Upload to Cloud (Optional)
+                try {
+                    const response = await fetch('/api/save-to-cloud', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            filename,
+                            content: htmlContent,
+                            contentType: 'text/html'
+                        })
+                    });
+
+                    if (response.ok) {
+                        const { url } = await response.json();
+                        
+                        // 3. Copy link to clipboard
+                        const tempInput = document.createElement('input');
+                        tempInput.value = url;
+                        document.body.appendChild(tempInput);
+                        tempInput.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tempInput);
+
+                        alert(`Dashboard mirror downloaded locally!\n\nAlso saved to cloud and link copied:\n${url}`);
+                    } else {
+                        throw new Error("Cloud save failed");
+                    }
+                } catch (cloudError) {
+                    console.warn("Cloud upload failed, but local download succeeded:", cloudError);
+                    alert("Dashboard mirror downloaded locally!\n\n(Cloud upload unavailable in this environment)");
+                }
+
+            } catch (error) {
+                console.error("Report Generation Error:", error);
+                alert("Failed to generate dashboard report.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        function downloadDashboard() {
+            const htmlContent = getDashboardMirrorHTML();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `dashboard_snapshot_${new Date().getTime()}.html`);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        async function saveToCloud() {
+            if (!currentModalData || currentModalData.length === 0) return;
+            
+            const btn = document.getElementById('cloud-btn');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">⏳</span> Saving...';
+
+            let csv = "ID,Subject,Status,Group,Age(Days)\n";
+            currentModalData.forEach(t => {
+                let statusText = t.status === 2 ? 'Open' : 'Pending/Waiting';
+                let safeSubject = (t.subject || '').replace(/"/g, '""');
+                csv += `${t.id},"${safeSubject}",${statusText},"${t._groupName}",${t._daysOld.toFixed(1)}\n`;
+            });
+
+            const filename = `tickets_export_${document.getElementById('modal-title').innerText.replace(/\s+/g, '_').toLowerCase()}_${new Date().getTime()}.csv`;
+
+            try {
+                const response = await fetch('/api/save-to-cloud', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename,
+                        content: csv,
+                        contentType: 'text/csv'
+                    })
+                });
+
+                if (!response.ok) throw new Error("Failed to save to cloud");
+
+                const { url } = await response.json();
+                alert(`Successfully saved to cloud!\nView here: ${url}`);
+            } catch (error) {
+                console.error("Cloud Save Error:", error);
+                alert("Failed to save to cloud storage.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        function startDashboard() {
+            document.getElementById('initial-screen').style.display = 'none';
+            fetchFreshdeskData();
+            // Auto refresh disabled per user request. Use "Force Refresh" button.
+            // setInterval(fetchFreshdeskData, 300000); 
+        }
+
+        // Remove window.onload auto-fetch
+        // window.onload = () => {
+        //     fetchFreshdeskData();
+        //     // Auto refresh every 5 minutes (300000 ms)
+        //     setInterval(fetchFreshdeskData, 300000); 
+        // };
+    </script>
+</body>
+</html>
